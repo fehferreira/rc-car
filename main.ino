@@ -22,7 +22,7 @@
 */
 // Bluetooth
 #include <SoftwareSerial.h>
-SoftwareSerial btSerial(10, 11); // RX, TX (Arduino pins)
+SoftwareSerial btSerial(0, 1); // RX, TX (Arduino pins)
 
 // declaracao dos pinos do driver de motor
 const int PIN_MOTOR_IN1 = 2;
