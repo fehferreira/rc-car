@@ -6,8 +6,8 @@ const int PINO_SENSOR_TRIGGER = 9;
 // declaracao dos pinos do driver de motor
 const int PIN_MOTOR_IN1 = 2;
 const int PIN_MOTOR_IN2 = 3;
-const int PIN_MOTOR_IN3 = 6;
-const int PIN_MOTOR_IN4 = 7;
+const int PIN_MOTOR_IN3 = 7;
+const int PIN_MOTOR_IN4 = 6;
 
 
 // declaracao das constantes auxiliares para controlar os motores
@@ -18,6 +18,9 @@ const int PAUSA = 25; // [ms]
 // Variável global para armazenar a velocidade fixa (0 a 100)
 int VELOCIDADE_FIXA = 1; // Valor padrão de 50% da velocidade máxima
 
+// tempo de giro (ms) usado para virar esquerda/direita
+const int TURN_DELAY = 400; // ajuste conforme o hardware
+
 
 // ---------------------------------------------------
 
@@ -26,6 +29,8 @@ int ler_distancia(void);
 void mover_frente(void);
 void parar(void);
 void ajustar_velocidade_fixa();
+void virar_esquerda();
+void virar_direita();
 
 
 // ---------------------------------------------------
@@ -68,8 +73,38 @@ void loop() {
   // verifica se ha um obstaculo na frente
   if(distancia < DISTANCIA_SEGURA){
     Serial.println("Obstáculo detectado! Parando...");
-    parar();
-    delay(1000);
+    // tenta primeiro virar para a esquerda e verificar novamente
+    virar_esquerda();
+    delay(200); // pequena estabilização
+    int distancia_pos_virada = ler_distancia();
+    Serial.print("Distancia apos virar_esquerda: ");
+    Serial.print(distancia_pos_virada);
+    Serial.println(" cm");
+
+    if(distancia_pos_virada < DISTANCIA_SEGURA){
+      // se ainda bloqueado, tenta virar para a direita
+      virar_direita();
+      delay(200);
+      distancia_pos_virada = ler_distancia();
+      Serial.print("Distancia apos virar_direita: ");
+      Serial.print(distancia_pos_virada);
+      Serial.println(" cm");
+
+      if(distancia_pos_virada < DISTANCIA_SEGURA){
+        // ambos lados bloqueados: parar e aguardar
+        Serial.println("Ambos lados bloqueados. Parando e aguardando...");
+        parar();
+        delay(1000);
+      } else {
+        // direita liberada
+        Serial.println("Direita liberada. Indo para frente...");
+        mover_frente();
+      }
+    } else {
+      // esquerda liberada
+      Serial.println("Esquerda liberada. Indo para frente...");
+      mover_frente();
+    }
   } else { // senao
     // move o robo para a frente
     mover_frente();
@@ -117,6 +152,32 @@ void parar(void){
   digitalWrite(PIN_MOTOR_IN2, HIGH);
   digitalWrite(PIN_MOTOR_IN3, LOW);
   digitalWrite(PIN_MOTOR_IN4, HIGH);
+}
+
+
+// Gira o robo para a esquerda por um tempo fixo
+void virar_esquerda(){
+  // para um diferencial de motores simples: roda direita pra frente, roda esquerda pra tras
+  digitalWrite(PIN_MOTOR_IN1, LOW);  // motor esquerdo parar/tras dependendo do driver
+  digitalWrite(PIN_MOTOR_IN2, HIGH);
+  digitalWrite(PIN_MOTOR_IN3, HIGH); // motor direito pra frente
+  digitalWrite(PIN_MOTOR_IN4, LOW);
+  delay(TURN_DELAY);
+  // para após completar o giro
+  parar();
+}
+
+
+// Gira o robo para a direita por um tempo fixo
+void virar_direita(){
+  // inverso da esquerda: roda esquerda pra frente, roda direita pra tras
+  digitalWrite(PIN_MOTOR_IN1, HIGH);
+  digitalWrite(PIN_MOTOR_IN2, LOW);
+  digitalWrite(PIN_MOTOR_IN3, LOW);
+  digitalWrite(PIN_MOTOR_IN4, HIGH);
+  delay(TURN_DELAY);
+  // para após completar o giro
+  parar();
 }
 
 
