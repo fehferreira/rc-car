@@ -1,13 +1,34 @@
-// declaracao dos pinos do sensor ultrassononico
-const int PINO_SENSOR_ECHO = 8;
-const int PINO_SENSOR_TRIGGER = 9;
+/*
+  Sketch modificado para controlar o carrinho via módulo Bluetooth HC-05
 
+  Wiring (example for Arduino UNO):
+  - HC-05 TX  -> Arduino D10 (RX of SoftwareSerial)
+  - HC-05 RX  -> Arduino D11 (TX of SoftwareSerial)  *Use um divisor de tensão no RX do HC-05 se o Arduino fornece 5V*
+  - HC-05 VCC -> 5V
+  - HC-05 GND -> GND
+
+  Emparelhamento:
+  - Pareie com o HC-05 usando senha 1234 ou 0000 (varia por módulo)
+
+  Comandos suportados (envie por app Bluetooth ou via Serial USB):
+  - F, FRENTE, ON    -> mover para frente
+  - P, PARAR, STOP   -> parar
+  - E, ESQUERDA      -> virar/esquerda
+  - D, DIREITA       -> virar/direita
+  - V=<0-100>        -> ajustar velocidade fixa (porcentagem)
+  - STATUS           -> responde com velocidade atual
+
+  O sketch envia respostas tanto para o Serial USB quanto para o HC-05.
+*/
+// Bluetooth
+#include <SoftwareSerial.h>
+SoftwareSerial btSerial(10, 11); // RX, TX (Arduino pins)
 
 // declaracao dos pinos do driver de motor
 const int PIN_MOTOR_IN1 = 2;
 const int PIN_MOTOR_IN2 = 3;
-const int PIN_MOTOR_IN3 = 6;
-const int PIN_MOTOR_IN4 = 7;
+const int PIN_MOTOR_IN3 = 7;
+const int PIN_MOTOR_IN4 = 6;
 
 
 // declaracao das constantes auxiliares para controlar os motores
@@ -18,6 +39,9 @@ const int PAUSA = 25; // [ms]
 // Variável global para armazenar a velocidade fixa (0 a 100)
 int VELOCIDADE_FIXA = 1; // Valor padrão de 50% da velocidade máxima
 
+// tempo de giro (ms) usado para virar esquerda/direita
+const int TURN_DELAY = 400; // ajuste conforme o hardware
+
 
 // ---------------------------------------------------
 
@@ -26,6 +50,11 @@ int ler_distancia(void);
 void mover_frente(void);
 void parar(void);
 void ajustar_velocidade_fixa();
+void virar_esquerda();
+void virar_direita();
+
+
+String btBuffer = ""; // buffer para compor comandos recebidos
 
 
 // ---------------------------------------------------
@@ -34,15 +63,11 @@ void ajustar_velocidade_fixa();
 void setup() {
   // Inicia a comunicação serial
   Serial.begin(9600);
-  Serial.println("Iniciando o carrinho...");
+  Serial.println("Iniciando o carrinho (modo HC-05)...");
+  // inicia a serial do modulo bluetooth
+  btSerial.begin(9600); // HC-05 default
 
-
-  // configura os pinos do sensor ultrassonico
-  pinMode(PINO_SENSOR_ECHO, INPUT); // entrada
-  pinMode(PINO_SENSOR_TRIGGER, OUTPUT); // saida
-  digitalWrite(PINO_SENSOR_TRIGGER, LOW); // por padrao em nivel baixo (sem sinal)
-
-
+  // OBS: removido sensor ultrassonico. Controle por comandos Bluetooth.
   // configura os pinos do driver de motor
   pinMode(PIN_MOTOR_IN1, OUTPUT); // saida
   pinMode(PIN_MOTOR_IN2, OUTPUT); // saida
@@ -56,28 +81,37 @@ void setup() {
 
 
 void loop() {
-  // le a distancia
-  int distancia = ler_distancia();
- 
-  // Mostra a distância lida no monitor serial
-  Serial.print("Distancia: ");
-  Serial.print(distancia);
-  Serial.println(" cm");
-
-
-  // verifica se ha um obstaculo na frente
-  if(distancia < DISTANCIA_SEGURA){
-    Serial.println("Obstáculo detectado! Parando...");
-    parar();
-    delay(1000);
-  } else { // senao
-    // move o robo para a frente
-    mover_frente();
+  // Lê dados vindos do Bluetooth e monta comandos por linha
+  while (btSerial.available()) {
+    char c = (char)btSerial.read();
+    if (c == '\n' || c == '\r') {
+      if (btBuffer.length() > 0) {
+        processar_comando(btBuffer);
+        btBuffer = "";
+      }
+    } else {
+      btBuffer += c;
+      // limita tamanho
+      if (btBuffer.length() > 64) btBuffer = btBuffer.substring(0,64);
+    }
   }
 
+  // Também aceita comandos via Serial USB para testes
+  while (Serial.available()) {
+    char c = (char)Serial.read();
+    if (c == '\n' || c == '\r') {
+      if (btBuffer.length() > 0) {
+        processar_comando(btBuffer);
+        btBuffer = "";
+      }
+    } else {
+      btBuffer += c;
+      if (btBuffer.length() > 64) btBuffer = btBuffer.substring(0,64);
+    }
+  }
 
-  // pausa para a proxima leitura
-  delay(PAUSA);
+  // pequena espera para não lotar a CPU
+  delay(10);
 }
 
 
@@ -85,17 +119,36 @@ void loop() {
 // ---------------------------------------------------
 
 
-// Ler a distancia com o sensor ultrassonico
-int ler_distancia(void){
-  // realiza o pulso de 10 microsegundos no trigger do sensor
-  digitalWrite(PINO_SENSOR_TRIGGER,HIGH);
-  delayMicroseconds(10);
-  digitalWrite(PINO_SENSOR_TRIGGER,LOW);
+// ---------------------------------------------------
+// Função para processar comandos recebidos por Bluetooth/Serial
+void processar_comando(String cmd) {
+  cmd.trim();
+  cmd.toUpperCase();
+  Serial.print("Comando recebido: "); Serial.println(cmd);
+  btSerial.print("ACK: "); btSerial.println(cmd);
 
-
-  // mede o pulso em microsegundos retornado para o echo do sensor
-  // e converte o tempo para distancia ao dividir por 58
-  return pulseIn(PINO_SENSOR_ECHO, HIGH) / 58; // [cm]
+  if (cmd == "F" || cmd == "FRENTE" || cmd == "ON") {
+    mover_frente();
+  } else if (cmd == "P" || cmd == "PARAR" || cmd == "STOP" ) {
+    parar();
+  } else if (cmd == "E" || cmd == "ESQUERDA") {
+    virar_esquerda();
+  } else if (cmd == "D" || cmd == "DIREITA") {
+    virar_direita();
+  } else if (cmd.startsWith("V=")) {
+    // ajustar velocidade: V=50
+    int v = cmd.substring(2).toInt();
+    if (v < 0) v = 0; if (v > 100) v = 100;
+    VELOCIDADE_FIXA = v;
+    Serial.print("Velocidade ajustada para: "); Serial.println(VELOCIDADE_FIXA);
+    btSerial.print("SPEED:"); btSerial.println(VELOCIDADE_FIXA);
+  } else if (cmd == "STATUS") {
+    Serial.print("STATUS: VELOCIDADE="); Serial.println(VELOCIDADE_FIXA);
+    btSerial.print("STATUS: VELOCIDADE="); btSerial.println(VELOCIDADE_FIXA);
+  } else {
+    Serial.println("Comando desconhecido");
+    btSerial.println("ERR:CMD");
+  }
 }
 
 
@@ -117,6 +170,32 @@ void parar(void){
   digitalWrite(PIN_MOTOR_IN2, HIGH);
   digitalWrite(PIN_MOTOR_IN3, LOW);
   digitalWrite(PIN_MOTOR_IN4, HIGH);
+}
+
+
+// Gira o robo para a esquerda por um tempo fixo
+void virar_esquerda(){
+  // para um diferencial de motores simples: roda direita pra frente, roda esquerda pra tras
+  digitalWrite(PIN_MOTOR_IN1, LOW);  // motor esquerdo parar/tras dependendo do driver
+  digitalWrite(PIN_MOTOR_IN2, HIGH);
+  digitalWrite(PIN_MOTOR_IN3, HIGH); // motor direito pra frente
+  digitalWrite(PIN_MOTOR_IN4, LOW);
+  delay(TURN_DELAY);
+  // para após completar o giro
+  parar();
+}
+
+
+// Gira o robo para a direita por um tempo fixo
+void virar_direita(){
+  // inverso da esquerda: roda esquerda pra frente, roda direita pra tras
+  digitalWrite(PIN_MOTOR_IN1, HIGH);
+  digitalWrite(PIN_MOTOR_IN2, LOW);
+  digitalWrite(PIN_MOTOR_IN3, LOW);
+  digitalWrite(PIN_MOTOR_IN4, HIGH);
+  delay(TURN_DELAY);
+  // para após completar o giro
+  parar();
 }
 
 
