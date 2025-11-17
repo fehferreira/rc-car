@@ -46,7 +46,52 @@ void mover_frente(void);
 void parar(void);
 void virar_esquerda();
 void virar_direita();
+void desviar_obstaculo();
 void processar_comando(String cmd);
+
+// tenta encontrar uma rota livre: gira à direita em pequenos passos verificando
+// a distância; se não achar à direita tenta à esquerda. Se encontrar um ponto
+// livre, avança um pouco e retorna ao fluxo normal.
+void desviar_obstaculo() {
+  Serial.println("Obstaculo detectado: tentando desviar...");
+  parar();
+
+  const int attempts = 6; // número de passos de rotação para cada lado
+
+  // Tentar à direita primeiro
+  for (int i = 0; i < attempts; ++i) {
+    virar_direita(); // cada chamada roda por TURN_DELAY ms
+    delay(50); // tempo curto para estabilizar leitura
+    int d = ler_distancia();
+    Serial.print("Verificando direita, distancia="); Serial.println(d);
+    if (d >= DISTANCIA_SEGURA) {
+      Serial.println("Caminho liberado à direita. Avancando.");
+      mover_frente();
+      delay(300); // avançar um pouco para sair do obstáculo
+      parar();
+      return;
+    }
+  }
+
+  // Se não encontrou à direita, tentar à esquerda
+  for (int i = 0; i < attempts; ++i) {
+    virar_esquerda();
+    delay(50);
+    int d = ler_distancia();
+    Serial.print("Verificando esquerda, distancia="); Serial.println(d);
+    if (d >= DISTANCIA_SEGURA) {
+      Serial.println("Caminho liberado à esquerda. Avancando.");
+      mover_frente();
+      delay(300);
+      parar();
+      return;
+    }
+  }
+
+  // se nada funcionou, parar e aguardar intervenção
+  Serial.println("Nao encontrou rota livre. Parando e aguardando.");
+  parar();
+}
 
 void setup() {
   Serial.begin(9600);
@@ -90,9 +135,8 @@ void loop() {
     Serial.println(" cm");
 
     if (distancia < DISTANCIA_SEGURA) {
-      Serial.println("Obstáculo detectado! Parando...");
-      parar();
-      delay(1000);
+      // quando detectar obstáculo, tentar desviar para encontrar caminho livre
+      desviar_obstaculo();
     } else {
       mover_frente();
     }
