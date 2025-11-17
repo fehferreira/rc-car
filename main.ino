@@ -20,9 +20,6 @@
 
   O sketch envia respostas tanto para o Serial USB quanto para o HC-05.
 */
-// Bluetooth
-#include <SoftwareSerial.h>
-SoftwareSerial btSerial(0, 1); // RX, TX (Arduino pins)
 
 // declaracao dos pinos do driver de motor
 const int PIN_MOTOR_IN1 = 2;
@@ -40,7 +37,7 @@ const int PAUSA = 25; // [ms]
 int VELOCIDADE_FIXA = 1; // Valor padrão de 50% da velocidade máxima
 
 // tempo de giro (ms) usado para virar esquerda/direita
-const int TURN_DELAY = 400; // ajuste conforme o hardware
+const int TURN_DELAY = 200; // ajuste conforme o hardware
 
 
 // ---------------------------------------------------
@@ -64,8 +61,6 @@ void setup() {
   // Inicia a comunicação serial
   Serial.begin(9600);
   Serial.println("Iniciando o carrinho (modo HC-05)...");
-  // inicia a serial do modulo bluetooth
-  btSerial.begin(9600); // HC-05 default
 
   // OBS: removido sensor ultrassonico. Controle por comandos Bluetooth.
   // configura os pinos do driver de motor
@@ -81,22 +76,6 @@ void setup() {
 
 
 void loop() {
-  // Lê dados vindos do Bluetooth e monta comandos por linha
-  while (btSerial.available()) {
-    char c = (char)btSerial.read();
-    if (c == '\n' || c == '\r') {
-      if (btBuffer.length() > 0) {
-        processar_comando(btBuffer);
-        btBuffer = "";
-      }
-    } else {
-      btBuffer += c;
-      // limita tamanho
-      if (btBuffer.length() > 64) btBuffer = btBuffer.substring(0,64);
-    }
-  }
-
-  // Também aceita comandos via Serial USB para testes
   while (Serial.available()) {
     char c = (char)Serial.read();
     if (c == '\n' || c == '\r') {
@@ -120,14 +99,13 @@ void loop() {
 
 
 // ---------------------------------------------------
-// Função para processar comandos recebidos por Bluetooth/Serial
+// Função para processar comandos recebidos
 void processar_comando(String cmd) {
   cmd.trim();
   cmd.toUpperCase();
   Serial.print("Comando recebido: "); Serial.println(cmd);
-  btSerial.print("ACK: "); btSerial.println(cmd);
 
-  if (cmd == "F" || cmd == "FRENTE" || cmd == "ON") {
+  if (cmd == "A" || cmd == "ANDAR" || cmd == "ON") {
     mover_frente();
   } else if (cmd == "P" || cmd == "PARAR" || cmd == "STOP" ) {
     parar();
@@ -141,13 +119,10 @@ void processar_comando(String cmd) {
     if (v < 0) v = 0; if (v > 100) v = 100;
     VELOCIDADE_FIXA = v;
     Serial.print("Velocidade ajustada para: "); Serial.println(VELOCIDADE_FIXA);
-    btSerial.print("SPEED:"); btSerial.println(VELOCIDADE_FIXA);
   } else if (cmd == "STATUS") {
     Serial.print("STATUS: VELOCIDADE="); Serial.println(VELOCIDADE_FIXA);
-    btSerial.print("STATUS: VELOCIDADE="); btSerial.println(VELOCIDADE_FIXA);
   } else {
     Serial.println("Comando desconhecido");
-    btSerial.println("ERR:CMD");
   }
 }
 
@@ -157,15 +132,6 @@ void processar_comando(String cmd) {
 
 // Mover o robo para a frente
 void mover_frente(void){
-  digitalWrite(PIN_MOTOR_IN1, HIGH);
-  digitalWrite(PIN_MOTOR_IN2, LOW);
-  digitalWrite(PIN_MOTOR_IN3, HIGH);
-  digitalWrite(PIN_MOTOR_IN4, LOW);
-}
-
-
-// Parar o robo
-void parar(void){
   digitalWrite(PIN_MOTOR_IN1, LOW);
   digitalWrite(PIN_MOTOR_IN2, HIGH);
   digitalWrite(PIN_MOTOR_IN3, LOW);
@@ -173,13 +139,22 @@ void parar(void){
 }
 
 
+// Parar o robo
+void parar(void){
+  digitalWrite(PIN_MOTOR_IN1, LOW);
+  digitalWrite(PIN_MOTOR_IN2, LOW);
+  digitalWrite(PIN_MOTOR_IN3, LOW);
+  digitalWrite(PIN_MOTOR_IN4, LOW);
+}
+
+
 // Gira o robo para a esquerda por um tempo fixo
 void virar_esquerda(){
   // para um diferencial de motores simples: roda direita pra frente, roda esquerda pra tras
-  digitalWrite(PIN_MOTOR_IN1, LOW);  // motor esquerdo parar/tras dependendo do driver
-  digitalWrite(PIN_MOTOR_IN2, HIGH);
-  digitalWrite(PIN_MOTOR_IN3, HIGH); // motor direito pra frente
-  digitalWrite(PIN_MOTOR_IN4, LOW);
+  digitalWrite(PIN_MOTOR_IN1, HIGH);
+  digitalWrite(PIN_MOTOR_IN2, LOW);
+  digitalWrite(PIN_MOTOR_IN3, LOW);
+  digitalWrite(PIN_MOTOR_IN4, HIGH);
   delay(TURN_DELAY);
   // para após completar o giro
   parar();
@@ -189,10 +164,10 @@ void virar_esquerda(){
 // Gira o robo para a direita por um tempo fixo
 void virar_direita(){
   // inverso da esquerda: roda esquerda pra frente, roda direita pra tras
-  digitalWrite(PIN_MOTOR_IN1, HIGH);
-  digitalWrite(PIN_MOTOR_IN2, LOW);
-  digitalWrite(PIN_MOTOR_IN3, LOW);
-  digitalWrite(PIN_MOTOR_IN4, HIGH);
+  digitalWrite(PIN_MOTOR_IN1, LOW);
+  digitalWrite(PIN_MOTOR_IN2, HIGH);
+  digitalWrite(PIN_MOTOR_IN3, HIGH);
+  digitalWrite(PIN_MOTOR_IN4, LOW);
   delay(TURN_DELAY);
   // para após completar o giro
   parar();
